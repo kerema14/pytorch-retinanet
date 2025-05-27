@@ -56,6 +56,7 @@ class CocoDataset(Dataset):
         self.labels = {}
         for key, value in self.classes.items():
             self.labels[value] = key
+            print('Class - {} id: {}'.format(key, value))
 
     def __len__(self):
         return len(self.image_ids)
@@ -120,7 +121,7 @@ class CocoDataset(Dataset):
         return float(image['width']) / float(image['height'])
 
     def num_classes(self):
-        return 80
+        return 1
 
 
 class CSVDataset(Dataset):
@@ -404,6 +405,9 @@ class Normalizer(object):
     def __call__(self, sample):
 
         image, annots = sample['img'], sample['annot']
+           # If the image has 4 channels (RGBA), remove the alpha channel
+        if image.shape[-1] == 4:  # Check if it has 4 channels (RGBA)
+            image = image[..., :3]  # Keep only the first 3 channels (RGB)
 
         return {'img':((image.astype(np.float32)-self.mean)/self.std), 'annot': annots}
 

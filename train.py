@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader
 from retinanet import coco_eval
 from retinanet import csv_eval
 
-assert torch.__version__.split('.')[0] == '1'
+assert torch.__version__.split('.')[0] == '2'
 
 print('CUDA available: {}'.format(torch.cuda.is_available()))
 
@@ -28,7 +28,7 @@ def main(args=None):
     parser.add_argument('--csv_train', help='Path to file containing training annotations (see readme)')
     parser.add_argument('--csv_classes', help='Path to file containing class list (see readme)')
     parser.add_argument('--csv_val', help='Path to file containing validation annotations (optional, see readme)')
-
+    parser.add_argument('--resume', default='', help='resume from checkpoint')
     parser.add_argument('--depth', help='Resnet depth, must be one of 18, 34, 50, 101, 152', type=int, default=50)
     parser.add_argument('--epochs', help='Number of epochs', type=int, default=100)
 
@@ -39,11 +39,13 @@ def main(args=None):
 
         if parser.coco_path is None:
             raise ValueError('Must provide --coco_path when training on COCO,')
-
+        print('Using COCO dataset')
         dataset_train = CocoDataset(parser.coco_path, set_name='train2017',
                                     transform=transforms.Compose([Normalizer(), Augmenter(), Resizer()]))
+        print('Using COCO dataset train2017')
         dataset_val = CocoDataset(parser.coco_path, set_name='val2017',
                                   transform=transforms.Compose([Normalizer(), Resizer()]))
+        print('Using COCO dataset val2017')
 
     elif parser.dataset == 'csv':
 
@@ -54,7 +56,7 @@ def main(args=None):
             raise ValueError('Must provide --csv_classes when training on COCO,')
 
         dataset_train = CSVDataset(train_file=parser.csv_train, class_list=parser.csv_classes,
-                                   transform=transforms.Compose([Normalizer(), Augmenter(), Resizer()]))
+                                   transform=transforms.Compose([Normalizer(), Augmenter(), Resizer()])) #data augmentation is done here
 
         if parser.csv_val is None:
             dataset_val = None
@@ -67,12 +69,15 @@ def main(args=None):
         raise ValueError('Dataset type not understood (must be csv or coco), exiting.')
 
     sampler = AspectRatioBasedSampler(dataset_train, batch_size=2, drop_last=False)
-    dataloader_train = DataLoader(dataset_train, num_workers=3, collate_fn=collater, batch_sampler=sampler)
+    dataloader_train = DataLoader(dataset_train,  collate_fn=collater, batch_sampler=sampler)
 
     if dataset_val is not None:
         sampler_val = AspectRatioBasedSampler(dataset_val, batch_size=1, drop_last=False)
-        dataloader_val = DataLoader(dataset_val, num_workers=3, collate_fn=collater, batch_sampler=sampler_val)
-
+        dataloader_val = DataLoader(dataset_val,  collate_fn=collater, batch_sampler=sampler_val)
+    if parser.resume == '':
+        parser.resume = 'retinanet-r50_no-class-head.pth'
+    checkpoint = torch.load(parser.resume, map_location='cpu')
+    print('Creating model...')
     # Create the model
     if parser.depth == 18:
         retinanet = model.resnet18(num_classes=dataset_train.num_classes(), pretrained=True)
@@ -88,11 +93,11 @@ def main(args=None):
         raise ValueError('Unsupported model depth, must be one of 18, 34, 50, 101, 152')
 
     use_gpu = True
-
+    print('Using GPU: {}'.format(use_gpu))
     if use_gpu:
         if torch.cuda.is_available():
             retinanet = retinanet.cuda()
-
+    print('Using GPU on retinanet: {}'.format(use_gpu))
     if torch.cuda.is_available():
         retinanet = torch.nn.DataParallel(retinanet).cuda()
     else:
@@ -105,22 +110,25 @@ def main(args=None):
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, verbose=True)
 
     loss_hist = collections.deque(maxlen=500)
-
+    print('Using Adam optimizer')
     retinanet.train()
     retinanet.module.freeze_bn()
 
     print('Num training images: {}'.format(len(dataset_train)))
 
     for epoch_num in range(parser.epochs):
-
+        print("Setting to train mode")
         retinanet.train()
+        print("Freezing batch norm")
         retinanet.module.freeze_bn()
-
+        print("Initialized")
         epoch_loss = []
 
         for iter_num, data in enumerate(dataloader_train):
+            print("Iter num: {}".format(iter_num))
             try:
                 optimizer.zero_grad()
+                print('try num: {}'.format(iter_num))
 
                 if torch.cuda.is_available():
                     classification_loss, regression_loss = retinanet([data['img'].cuda().float(), data['annot']])
@@ -168,8 +176,11 @@ def main(args=None):
             mAP = csv_eval.evaluate(dataset_val, retinanet)
 
         scheduler.step(np.mean(epoch_loss))
-
-        torch.save(retinanet.module, '{}_retinanet_{}.pt'.format(parser.dataset, epoch_num))
+        if(epoch_num-1 % 50 == 0) or (epoch_num == parser.epochs - 1):
+            print('Saving state...')
+            torch.save(retinanet.module, 'outputs/{}_retinanet_{}.pt'.format(parser.dataset, epoch_num))
+            print('Saved state to outputs/{}_retinanet_{}.pt'.format(parser.dataset, epoch_num))
+        
 
     retinanet.eval()
 

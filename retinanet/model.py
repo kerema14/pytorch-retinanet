@@ -325,10 +325,22 @@ def resnet50(num_classes, pretrained=False, **kwargs):
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
+    resume = kwargs.pop('resume', None)
     model = ResNet(num_classes, Bottleneck, [3, 4, 6, 3], **kwargs)
-    if pretrained:
-        model.load_state_dict(model_zoo.load_url(model_urls['resnet50'], model_dir='.'), strict=False)
-    return model
+    
+    if resume:
+        print("loading resume resnet 50")
+        model.load_state_dict(resume.state_dict(), strict=False)
+        print("loaded resume resnet 50")
+        return model
+    else:
+        resume_path = "retinanet-r50_no-class-head.pth"
+        checkpoint = torch.load(resume_path)
+        # Check if it's wrapped with DataParallel
+        
+        
+        model.load_state_dict(checkpoint, strict=False)
+        return model
 
 
 def resnet101(num_classes, pretrained=False, **kwargs):
