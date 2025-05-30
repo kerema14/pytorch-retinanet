@@ -63,6 +63,7 @@ def evaluate_coco(dataset, model, threshold=0.05):
             print('{}/{}'.format(index, len(dataset)), end='\r')
 
         if not len(results):
+            print('No detections found, skipping evaluation.')
             return
 
         # write output
@@ -78,7 +79,8 @@ def evaluate_coco(dataset, model, threshold=0.05):
         coco_eval.evaluate()
         coco_eval.accumulate()
         coco_eval.summarize()
-
+        
+        
         model.train()
 
-        return
+        return coco_eval.stats
