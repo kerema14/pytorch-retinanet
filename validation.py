@@ -40,8 +40,10 @@ def main(args=None):
     retinanet.training = False
     retinanet.eval()
     
-
-    coco_eval.evaluate_coco(dataset_val, retinanet)
+    
+    print('Evaluating COCO dataset...')
+    stats, average_time = coco_eval.evaluate_coco(dataset_val, retinanet)
+    print('Average time: {:.1f} ms'.format(average_time*1000))
 
 
 if __name__ == '__main__':

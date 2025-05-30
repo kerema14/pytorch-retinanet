@@ -1,12 +1,13 @@
 from pycocotools.cocoeval import COCOeval
 import json
 import torch
+import time 
 
 
 def evaluate_coco(dataset, model, threshold=0.05):
     
     model.eval()
-    
+    total_time = 0.0
     with torch.no_grad():
 
         # start collecting results
@@ -14,14 +15,18 @@ def evaluate_coco(dataset, model, threshold=0.05):
         image_ids = []
 
         for index in range(len(dataset)):
+            
             data = dataset[index]
             scale = data['scale']
 
             # run network
+            time_Start = time.time()
             if torch.cuda.is_available():
                 scores, labels, boxes = model(data['img'].permute(2, 0, 1).cuda().float().unsqueeze(dim=0))
             else:
                 scores, labels, boxes = model(data['img'].permute(2, 0, 1).float().unsqueeze(dim=0))
+            total_time += time.time() - time_Start
+
             scores = scores.cpu()
             labels = labels.cpu()
             boxes  = boxes.cpu()
@@ -82,5 +87,5 @@ def evaluate_coco(dataset, model, threshold=0.05):
         
         
         model.train()
-
-        return coco_eval.stats
+        average_time = total_time / len(dataset)
+        return coco_eval.stats, average_time
